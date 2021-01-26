@@ -1,8 +1,13 @@
+#define USE_STM3210B_EVAL
+
 #include "stm32f10x.h"
+#include "math.h"
+
 
 #define uint32 unsigned int
 
-
+volatile float fress[1000] = {0};
+volatile unsigned short periods[1000] = {0};
 
 volatile uint32 pulse_width = 0;
 volatile uint32	direction = 0;
@@ -15,12 +20,7 @@ void delay_ms(uint16_t ms)
 	}
 } 
 
-
-//1.é€šè¿‡æ›´æ”¹é¢„åˆ†é¢‘å™¨çš„å€¼ï¼Œæ”¹å˜è®¡æ•°å™¨çš„é¢‘ç‡çš„æ–¹å¼æ”¹å˜PWMæ³¢çš„é¢‘ç‡
-//åœ¨STM32F103ä¸­æœ‰å°è£…å¥½çš„è°ƒèŠ‚é¢„åˆ†é¢‘å™¨çš„å‡½æ•° TIM_PrescalerConfig()ï¼›ç›´æ¥è°ƒç”¨å³å¯ã€‚
-//æº¢å‡ºè®¡æ•°å€¼(arr  å€¼åŸŸ0-65536)=72MHz/æƒ³å¾—åˆ°çš„é¢‘ç‡
-//æŒ‰ç…§72Mçš„é¢„åˆ†é¢‘ï¼Œé¢‘ç‡ ï¼ˆèŒƒå›´çº¦ç­‰äºï¼‰= 1100HZ  - 72MHZ
-//ä¾‹å­ï¼š
+//ledµÆgpio³õÊ¼»¯
 void ledinit()
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
@@ -33,8 +33,25 @@ void ledinit()
 	
 }
 
+void ledflash()
+{
+	static char ledstate = 0;
+
+	ledstate = ~ledstate;
+	if(ledstate > 0)
+	{
+		GPIO_SetBits(GPIOB , GPIO_Pin_12);
+	}
+	else
+	{
+		GPIO_ResetBits(GPIOB , GPIO_Pin_12);
+	}
+
+}
+
+
  
- 
+ //pwm³õÊ¼»¯
 void PWM_Init(u16 arr,u16 psc)
 {
 	GPIO_InitTypeDef  GPIO_InitStructure;
@@ -47,21 +64,22 @@ void PWM_Init(u16 arr,u16 psc)
  
 	
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;        
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;                    //IOå£å¤ç”¨æ¨æŒ½è¾“å‡º
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;                  //IOå£é€Ÿåº¦
-	GPIO_Init(GPIOA, &GPIO_InitStructure);	//USARTè¾“å‡ºIOå£
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;                    //IO¿Ú¸´ÓÃÍÆÍìÊä³ö
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;                  //IO¿ÚËÙ¶È
+	GPIO_Init(GPIOA, &GPIO_InitStructure);	//USARTÊä³öIO¿Ú
 	
 	TIM_DeInit(TIM2);
 	
-	TIM_TimeBaseStructure.TIM_Period = arr; //å®šæ—¶å‘¨æœŸ
-	TIM_TimeBaseStructure.TIM_Prescaler =psc; //é¢„åˆ†é¢‘1ï¼Œ36M
-	TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; //æ—¶é’Ÿåˆ†é¢‘å› å­
-	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; //å‘ä¸Šè®¡æ•°æ¨¡å¼
+	
+	TIM_TimeBaseStructure.TIM_Period = arr; //¶¨Ê±ÖÜÆÚ
+	TIM_TimeBaseStructure.TIM_Prescaler =psc; //Ô¤·ÖÆµ1£¬36M
+	TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; //Ê±ÖÓ·ÖÆµÒò×Ó
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; //ÏòÉÏ¼ÆÊıÄ£Ê½
 	TIM_TimeBaseInit(TIM2,&TIM_TimeBaseStructure);
 	
-	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1; //è¾“å‡ºPWMæ¨¡å¼
-	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable; //ä½¿èƒ½è¾“å‡º
-	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;//è¾“å‡ºææ€§
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1; //Êä³öPWMÄ£Ê½
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable; //Ê¹ÄÜÊä³ö
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;//Êä³ö¼«ĞÔ
 	TIM_OCInitStructure.TIM_Pulse = 50;
 	
 	TIM_OC1Init(TIM2,&TIM_OCInitStructure);
@@ -74,49 +92,209 @@ void PWM_Init(u16 arr,u16 psc)
 	TIM_OC3PreloadConfig(TIM2,TIM_OCPreload_Enable);
 	TIM_OC4PreloadConfig(TIM2,TIM_OCPreload_Enable);
  
-//å¯ä»¥é€‰æ‹©æœ‰ä¸­æ–­æˆ–æ— ä¸­æ–­
-//	TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE );
-//		
-//	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn; 
-//	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
-//	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;  
-//	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-//	NVIC_Init(&NVIC_InitStructure);  
+//¿ÉÒÔÑ¡ÔñÓĞÖĞ¶Ï»òÎŞÖĞ¶Ï
+	TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE );
+		
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn; 
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;  
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);  
  
- 
-	//TIM_ARRPreloadConfig(TIM2,ENABLE);
+	//¿ªÆô×Ô¶¯ÖØ×°,ÔÊĞíarrÔÚ¶¨Ê±Æ÷¿ªÆôÊ±¸ü¸Ä
+	TIM_ARRPreloadConfig(TIM2,ENABLE);
+//¿ÉÒÔÑ¡ÔñÓĞÖĞ¶Ï»òÎŞÖĞ¶Ï
+
 	TIM_Cmd(TIM2,ENABLE);
 }
  
-//å¯ä»¥é€‰æ‹©æœ‰ä¸­æ–­æˆ–æ— ä¸­æ–­
+
+//¿ÉÒÔÑ¡ÔñÓĞÖĞ¶Ï»òÎŞÖĞ¶Ï
 void TIM2_IRQHandler(void)
 {
+//	if(TIM_GetITStatus(TIM2,TIM_IT_Update) != RESET)
+//	{
+//		TIM_ClearITPendingBit(TIM2,TIM_IT_Update);
+//		
+//		if(pulse_width == 0)
+//			direction = 0;
+//		else if(pulse_width == 100)
+//			direction = 1;
+// 
+//		if(direction == 0)
+//			pulse_width++;
+//		else
+//			pulse_width--;
+//		TIM_SetCompare1(TIM2, pulse_width);
+//		
+//	}
+	
+	static int i = 0;
+
 	if(TIM_GetITStatus(TIM2,TIM_IT_Update) != RESET)
 	{
 		TIM_ClearITPendingBit(TIM2,TIM_IT_Update);
 		
-		if(pulse_width == 0)
-			direction = 0;
-		else if(pulse_width == 100)
-			direction = 1;
- 
-		if(direction == 0)
-			pulse_width++;
-		else
-			pulse_width--;
-		TIM_SetCompare1(TIM2, pulse_width);
+		
+
+			
+			if(i >= 1000){
+
+			}
+			else
+			{
+				//ĞŞ¸ÄÔ¤·ÖÆµÖµ
+				//TIM_PrescalerConfig(TIM2,periods[i],TIM_PSCReloadMode_Immediate);
+				
+				//ĞŞ¸ÄarrÖµ,×Ô¶¯ÖØ×°arr
+				TIM_SetAutoreload(TIM2, periods[i]);
+				TIM_SetCounter(TIM2,0);
+				TIM_SetCompare1(TIM2, periods[i]/2);
+				i++;
+			}
+		
+		
 		
 	}
+	
  
 }
  
-//é¢‘ç‡ 5k,10k,20k,50k,100k
+
+void stepmotoraccspeedup()
+{
+	static int i = 0;
+	static int acc = 0;
+	
+	if(TIM_GetITStatus(TIM2,TIM_IT_Update) != RESET)
+	{
+		TIM_ClearITPendingBit(TIM2,TIM_IT_Update);
+		//if(acc > 72000)
+		//{
+		//	acc = 0;
+			
+			if(i >= 1000){
+
+			}
+			else
+			{
+				//ĞŞ¸ÄÔ¤·ÖÆµÖµ
+				//TIM_PrescalerConfig(TIM2,periods[i],TIM_PSCReloadMode_Immediate);
+				
+				//ĞŞ¸ÄarrÖµ,×Ô¶¯ÖØ×°arr
+				TIM_SetAutoreload(TIM2, periods[i]);
+				TIM_SetCounter(TIM2,0);
+				TIM_SetCompare1(TIM2, periods[i]/2);
+				i++;
+			}
+		//}
+		//acc++;
+		
+	}
+
+}
+
+
+void stepmotoraccspeedupdown()
+{
+	
+	static int i = 0;
+	static int acc = 0;
+	
+	if(TIM_GetITStatus(TIM2,TIM_IT_Update) != RESET)
+	{
+		TIM_ClearITPendingBit(TIM2,TIM_IT_Update);
+		//if(acc > 72000)
+		//{
+		//	acc = 0;
+			
+			if(i >= 1000){
+				//ĞŞ¸ÄarrÖµ,×Ô¶¯ÖØ×°arr stop motor
+				TIM_SetAutoreload(TIM2, periods[1999-i]);
+				TIM_SetCounter(TIM2,0);
+				TIM_SetCompare1(TIM2, periods[1999-i]/2);
+				i++;
+				if(i>=2000)i=0;
+			}
+			else
+			{
+				//ĞŞ¸ÄÔ¤·ÖÆµÖµ
+				//TIM_PrescalerConfig(TIM2,periods[i],TIM_PSCReloadMode_Immediate);
+				
+				//ĞŞ¸ÄarrÖµ,×Ô¶¯ÖØ×°arr
+				TIM_SetAutoreload(TIM2, periods[i]);
+				TIM_SetCounter(TIM2,0);
+				TIM_SetCompare1(TIM2, periods[i]/2);
+				i++;
+			}
+		//}
+		//acc++;
+		
+	}
+
+
+}
+
+
+//ÆäÖĞµÄFcurrentÎªlength(1000)¸öµãÖĞµÄµ¥¸öÆµÂÊÖµ¡£FminÆğÊ¼ÆµÂÊÎª5600; FmaxÎª×î´óÆµÂÊ64000;
+//-flexible*(i - num)/numÊÇ¶ÔSĞÍÇúÏß½øĞĞÀ­Éì±ä»¯£¬ÆäÖĞflexible´ú±íSÇúÏßÇø¼ä£¨Ô½´ó´ú±íÑ¹ËõµÄ
+//×îÀ÷º¦£¬ÖĞ¼ä£¨x×ø±ê0µãÖÜÎ§£©¼ÓËÙ¶ÈÔ½´ó£»Ô½Ğ¡Ô½½Ó½üÔÈ¼ÓËÙ¡£ÀíÏëµÄSÇúÏßµÄÈ¡ÖµÎª4-6£©£¬iÊÇÔÚÑ­
+//»·¼ÆËã¹ı³ÌÖĞµÄË÷Òı£¬´Ó0¿ªÊ¼£¬numÎª length/2 ´óĞ¡(ÕâÑù¿ÉÒÔÊ¹µÃSÇúÏß¶Ô³Æ)¡£ÔÚÏîÄ¿ÖĞiµÄ
+//Çø¼ä[0,1000), num=1000/2=500¡£ÕâĞ©²ÎÊı¾ù¿ÉÒÔĞŞ¸Ä¡£Ìá¹©µÄ¼ÆËã½Ó¿ÚÈçÏÂ¡£
+
+/*  calculate the Period and Freq array value, fill the Period value into the Period register during the timer interrupt.
+*calculate the acceleration procedure , a totally 1000 elements array.
+* parameter    fre[]: point to the array that keeps the freq value.
+*   period[]: point to the array that keeps the timer period value.
+*   len: ´Ë¶Î¼ÓËÙËù·ÖµÄµãµÄ¸öÊı the procedure of acceleration length.it is best thing to set the float number, some compile software maybe transfer error if set it as a int
+*   fre_max: ×î´óËÙ¶È£¬ÆµÂÊÖµ µ¥Î»HZ maximum speed, frequency vale.
+*   fre_min: ×îĞ¡ËÙ¶È£¬ÆµÂÊÖµ µ¥Î»HZ start minimum speed, frequency vale.  mind : 10000000/65535 = 152, so fre_min can't less than 152.
+*   flexible:  flexible value. adjust the S curvesflexible ´ú±íSÇúÏßÇø¼ä£¨Ô½´ó´ú±íÑ¹ËõµÄ×îÀ÷º¦£¬ÖĞ¼ä£¨x×ø±ê0µãÖÜÎ§£©¼ÓËÙ¶ÈÔ½´ó£»Ô½Ğ¡Ô½½Ó½üÔÈ¼ÓËÙ¡£ÀíÏëµÄSÇúÏßµÄÈ¡ÖµÎª4-6£©
+*/
+//SÇúÏß¼ÓËÙ
+void CalculateSModelLine(float * fre,  unsigned short * period,   float  len,  float fre_max,  float fre_min, float flexible)
+{
+    int i=0;
+    float deno ;
+    float melo ;
+    float delt = fre_max-fre_min;
+    for(; i<len; i++)
+    {
+        melo = flexible * (i-len/2) / (len/2);
+        deno = 1.0 / (1 + expf(-melo));   //expf is a library function of exponential(e) 
+        fre[i] = delt * deno + fre_min;
+				period[i] = (unsigned short)(72000000.0 / fre[i]);  //ÕâÀïÎÒµÄ·ÖÆµÊÇ1£¬ËùÒÔ¶¨Ê±Æ÷ÆµÂÊÊÇ72M 
+        //period[i] = (unsigned short)(10000000.0 / fre[i]);    //ÕâÀïµÄ10MÊÇ¶¨Ê±Æ÷µÄÆµÂÊ 10000000 is the timer driver frequency
+    
+			//ÕâÀïĞèÒª×¢ÒâarrÖØ×°ÖµÊÇ²»ÄÜ´óÓÚ65535µÄ£¬ËùÒÔÏŞÖÆÒ»ÏÂ,ÆµÂÊµÃ´óÓÚÕâ¸öµÈÊ½µÄ½á¹û ¶¨Ê±Æ÷ÆµÂÊ/65535 = ÆµÂÊ
+			//Àı×Ó£º   72M/65535 = 1098.64 HZ    ÊäÈë×îĞ¡ÆµÂÊÒª´óÓÚ1098.64
+			
+			
+		}
+
+
+    return ;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+//ÆµÂÊ 5k,10k,20k,50k,100k
 unsigned short fres[5] = {14399,7199,3599,1439,719};
 int i; 
 
-int main()                                                                          
-{   
- 
+void mainsource()
+{
+	
 		ledinit();
  
 		PWM_Init(99,7199);
@@ -126,202 +304,52 @@ int main()
  
 		for(i=0;i<5;i++)
 		{
-        //è¿™é‡Œçš„ tim_cmd disable å’Œ enable å¯ä»¥ä¸åŠ ï¼Œæ²¡å½±å“  delay_msä¹Ÿæ˜¯
+        //ÕâÀïµÄ tim_cmd disable ºÍ enable ¿ÉÒÔ²»¼Ó£¬Ã»Ó°Ïì  delay_msÒ²ÊÇ
    		TIM_Cmd(TIM2,DISABLE);
         delay_ms(5);
 		TIM_PrescalerConfig(TIM2,fres[i],TIM_PSCReloadMode_Immediate);
-        TIM_SetCounter(TIM2,0);
+    TIM_SetCounter(TIM2,0);
 		TIM_Cmd(TIM2,ENABLE);
 		delay_ms(50);
 		}
 			
 		}
+	
 }
 
 
 
-////2é€šè¿‡æ™®é€šå®šæ—¶å™¨çš„ä¸­æ–­å»æ›´æ–°gpioçš„è¾“å‡ºæ–¹å¼æ”¹å˜PWMæ³¢çš„é¢‘ç‡ï¼Œå¾®è°ƒsetcount çš„å€¼å¯ä»¥å¹³ç¼“è¿‡æ¸¡é¢‘ç‡
-////ä¾‹å­ï¼š
 
-//void ledinit()
-//{
-//	GPIO_InitTypeDef GPIO_InitStructure;
-//	RCC_APB2PeriphClockCmd( RCC_APB2Periph_GPIOB , ENABLE); 						 					 
-//	GPIO_InitStructure.GPIO_Pin =  GPIO_Pin_12;
-//	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-//	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; 
-//	GPIO_Init(GPIOB, &GPIO_InitStructure);
-//	GPIO_SetBits(GPIOB , GPIO_Pin_12);
-//	
-//}
-// 
-//void MY_TIM3_Init(u16 arr,u16 psc){
-// 
-//	NVIC_InitTypeDef NVIC_InitStructure;
-//    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-// 
-// 
-//    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3,ENABLE);
-// 
-// 
-//    TIM_TimeBaseStructure.TIM_Period = arr;
-//    TIM_TimeBaseStructure.TIM_Prescaler = psc;
-// 
-// 
-//    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-//    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; //????
-//    TIM_TimeBaseInit(TIM3,&TIM_TimeBaseStructure);
-//		
-//	TIM_ITConfig(TIM3,TIM_IT_Update,ENABLE );
-//	NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn; 
-//	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;  
-//	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;  
-//	NVIC_Init(&NVIC_InitStructure);  
-// 
-//    TIM_Cmd(TIM3,ENABLE);
-//}
-// 
-//void TIM3_IRQHandler(void)
-//{
-//	if(TIM_GetITStatus(TIM3,TIM_IT_Update) != RESET)
-//	{
-//		TIM_ClearITPendingBit(TIM3,TIM_IT_Update);
-//		ledcount++;
-//		if(ledcount > setcount)
-//		{
-//			ledcount = 0;
-//			ledstate = ~ledstate;
-//			if(ledstate > 0)
-//			{
-//				GPIO_SetBits(GPIOB , GPIO_Pin_12);
-//			}
-//			else
-//			{
-//				GPIO_ResetBits(GPIOB , GPIO_Pin_12);
-//			}
-//			
-//			
-//		}
-// 
-//		
-//	}
-//}
-// 
-//volatile uint32 ledcount = 0;
-//volatile uint32 setcount = 1;
-// 
-//int main()                                                                          
-//{  
-//    MY_TIM3_Init(9,7199);
-//    ledinit();
-// 
-// 
-//		while(1)
-//		{
-//			setcount++;
-//			if(setcount > 100)
-//			{
-//					setcount = 1;
-//			}
-//			delay_ms(100);
-//        }
-//}
+void mainSmodel()
+{
+	
+
+	
+		ledinit();
+ 
+	  CalculateSModelLine( (float *)fress,(unsigned short *)periods,  1000, 50000,  2000, 4);
+	
+		PWM_Init(2000,0);
+ 
+	  
+		
+		while(1)
+		{
+ 
+			ledflash();
+			delay_ms(10);
+			
+		}
+	
+}
 
 
 
 
 
-
-
-
-
-
-
-
-
-////3é€šè¿‡æ›´æ”¹arrå€¼æ”¹å˜PWMæ³¢çš„é¢‘ç‡
-////ä¾‹å­ï¼š
-
-//void PWM_Init(u16 arr,u16 psc)
-//{
-//	GPIO_InitTypeDef  GPIO_InitStructure;
-//	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
-//	TIM_OCInitTypeDef TIM_OCInitStructure;
-//	NVIC_InitTypeDef NVIC_InitStructure;
-//	
-//	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2,ENABLE);
-//	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA,ENABLE);
-// 
-//	
-//	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;        
-//	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;                    //IOå£å¤ç”¨æ¨æŒ½è¾“å‡º
-//	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;                  //IOå£é€Ÿåº¦
-//	GPIO_Init(GPIOA, &GPIO_InitStructure);	//USARTè¾“å‡ºIOå£
-//	
-//	TIM_DeInit(TIM2);
-//	
-//	TIM_TimeBaseStructure.TIM_Period = arr; //å®šæ—¶å‘¨æœŸ
-//	TIM_TimeBaseStructure.TIM_Prescaler =psc; //é¢„åˆ†é¢‘1ï¼Œ36M
-//	TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; //æ—¶é’Ÿåˆ†é¢‘å› å­
-//	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; //å‘ä¸Šè®¡æ•°æ¨¡å¼
-//	TIM_TimeBaseInit(TIM2,&TIM_TimeBaseStructure);
-//	
-//	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1; //è¾“å‡ºPWMæ¨¡å¼
-//	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable; //ä½¿èƒ½è¾“å‡º
-//	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;//è¾“å‡ºææ€§
-//	TIM_OCInitStructure.TIM_Pulse = (int)(arr+1)/2;;
-//	
-//	
-// 
-//	
-//	TIM_OC1Init(TIM2,&TIM_OCInitStructure);
-////	TIM_OC2Init(TIM2,&TIM_OCInitStructure);
-////	TIM_OC3Init(TIM2,&TIM_OCInitStructure);
-////	TIM_OC4Init(TIM2,&TIM_OCInitStructure);
-//	
-//	TIM_OC1PreloadConfig(TIM2,TIM_OCPreload_Enable);
-////	TIM_OC2PreloadConfig(TIM2,TIM_OCPreload_Enable);
-////	TIM_OC3PreloadConfig(TIM2,TIM_OCPreload_Enable);
-////	TIM_OC4PreloadConfig(TIM2,TIM_OCPreload_Enable);
-// 
-// 
-////	TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE );
-////		
-////	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn; 
-////	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
-////	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;  
-////	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-////	NVIC_Init(&NVIC_InitStructure);  
-// 
-// 
-//	TIM_ARRPreloadConfig(TIM2,ENABLE);
-//	TIM_Cmd(TIM2,ENABLE);
-//}
-// 
-// 
-// 
-////PWM_Init(35999,0);				//2k, 4k,   8,    16k,   32k,     64k    144k   480k
-//unsigned short sfresarr[8] = {35999,17999,8999, 4499,  2249   ,  1124   ,499   ,149 };
-// 
-//int main()
-//{
-//	SystemInit();
-//    PWM_Init(35999,0);
-//	while(1)
-//	{
-//		TIM_Cmd(TIM2,DISABLE);
-//		TIM_ARRPreloadConfig(TIM2,DISABLE);
-//		delay_ms(20);
-//		TIM_SetCompare1(TIM2, sfresarr[i+1]);
-//		TIM_SetAutoreload(TIM2, sfresarr[7]);
-//		TIM_ARRPreloadConfig(TIM2,ENABLE);
-//        TIM_SetCounter(TIM2,0);
-//		TIM_Cmd(TIM2,ENABLE);
-//		delay_ms(500);
-//    }
-//}
-
-
-
-
+int main()                                                                          
+{   
+ //mainsource();
+	mainSmodel();
+}
 
